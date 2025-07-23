@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Cassette MP3 Player</title>
+  <style>
+    :root {
+      --button-row-offset: 1px; /* vertical offset between tape and buttons */
+      --label-y-offset: 5px;
+      --textY: 0.32;        /* music name vertical position */
+    }
+    body {
+      background-color: #f4a261;
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+    .player-frame {
+      width: 650px;
+      margin: 20px auto;
+      padding: 10px;
+      background-color: transparent;
+      position: relative;
+    }
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: var(--button-row-offset);
+    }
+    .control-button {
+      width: 20%; /* five buttons each 20% of 650px = 130px */
+      height: 94px;
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-color: transparent;
+      border: none;
+      cursor: pointer;
+      position: relative;
+      padding: 0;
+    }
+    .button-label {
+      position: absolute;
+      bottom: var(--label-y-offset);
+      color: white;
+      background: rgba(0,0,0,0.5);
+      padding: 2px 4px;
+      font-size: 12px;
+    }
+    .fileBtn .button-label { left: 5px; }
+    .playBtn .button-label { left: 5px; }
+    .stopBtn .button-label { left: 5px; }
+    .prevBtn .button-label { left: 5px; }
+    .nextBtn .button-label { left: 5px; }
+    #progressContainer {
+      width: 650px;
+      margin: 10px auto;
+    }
+    input[type=range] {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="player-frame">
+    <canvas id="cassetteCanvas" width="650" height="414"></canvas>
+    <div class="button-row">
+      <button id="fileBtn"  class="control-button fileBtn"><span class="button-label">File</span></button>
+      <button id="playBtn"  class="control-button playBtn"><span class="button-label">Play</span></button>
+      <button id="stopBtn"  class="control-button stopBtn"><span class="button-label">Stop</span></button>
+      <button id="prevBtn"  class="control-button prevBtn"><span class="button-label">Prev</span></button>
+      <button id="nextBtn"  class="control-button nextBtn"><span class="button-label">Next</span></button>
+    </div>
+  </div>
+  <div id="progressContainer">
+    <input type="file" id="fileInput" accept="audio/mp3" style="display:none">
+    <label>Vol:<br><input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1"></label>
+    <br><br>
+    <!-- Progress label removed, only slider shown -->
+    <input type="range" id="progressSlider" min="0" max="100" value="0">
+    <p id="status">Status: Stopped</p>
+  </div>
+  <script>
+    // Flags
+    const showBackground = false;
+    const showTrackLabel = true;
+    const showTapeReels = true;
+    const showButtonsLabels = false;
+    const showStatus = false; // hide status by default
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!showBackground) document.querySelector('.player-frame').style.backgroundColor = 'transparent';
+      document.querySelectorAll('.button-label').forEach(lbl => lbl.style.display = showButtonsLabels ? 'block' : 'none');
+      document.getElementById('status').style.display = showStatus ? 'block' : 'none';
+    });
+
+    // Sounds
+    const buttonSound = new Audio('bt_press.wav');
+    const loadSound   = new Audio('tape_load.wav');
+    const stopSound   = new Audio('tape_stop.wav');
+
+    // Audio player
+    const audio = new Audio();
+    let isPlaying = false;
+    let isPausedState = false;
+    let audioLoaded = false;
+    let trackName = 'No Tape loaded';
+
+    // Canvas
+    const canvas = document.getElementById('cassetteCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Reel config
+    const baseReelSize = 1.4;
+    const ROT_INC = 0.04;
+    const leftX = 0.305, rightX = 0.690, reelsY = 0.46;
+    const maxReel = 90 * baseReelSize, minReel = 45 * baseReelSize, ringSize = 21 * baseReelSize;
+    const textX = 0.5, textY = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--textY'));
+    const wobbleI = 0.6, wobbleS = 0.005;
+    const lPhase = Math.random() * 2 * Math.PI, rPhase = Math.random() * 2 * Math.PI;
+    let angle = 0, animId;
+
+    // Overlay
+    const overlay = new Image(); overlay.src = './K7_Face_03.png';
+    let overlayLoaded = false;
+    overlay.onload = () => { overlayLoaded = true; draw(); };
+
+    // Button images map: idle, push, pause
+    const btnMap = {
+      fileBtn: ['bt01_idle.png','bt01_push.png'],
+      playBtn: ['bt02_idle.png','bt02_push.png','pause.gif'],
+      stopBtn: ['bt03_idle.png','bt03_push.png'],
+      prevBtn: ['bt04_idle.png','bt04_push.png'],
+      nextBtn: ['bt05_idle.png','bt05_push.png']
+    };
+
+    // Init buttons
+    Object.entries(btnMap).forEach(([id, states]) => {
+      const btn = document.getElementById(id);
+      btn.style.backgroundImage = `url(${states[0]})`;
+      btn.addEventListener('mousedown', () => {
+        buttonSound.volume = audio.volume;
+        loadSound.volume   = audio.volume;
+        stopSound.volume   = audio.volume;
+        btn.style.backgroundImage = `url(${states[1]})`;
+        buttonSound.currentTime = 0;
+        buttonSound.play();
+      });
+      btn.addEventListener('mouseup', () => {
+        btn.style.backgroundImage = `url(${states[0]})`;
+      });
+    });
+
+    // Update visual states
+    function updateStates() {
+      const playBtn = document.getElementById('playBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const [pIdle,pPush,pPause] = btnMap.playBtn;
+      const [sIdle,sPush]        = btnMap.stopBtn;
+      if (isPlaying) {
+        playBtn.style.backgroundImage = `url(${pPush})`;
+        stopBtn.style.backgroundImage = `url(${sIdle})`;
+      } else if (isPausedState) {
+        playBtn.style.backgroundImage = `url(${pPause})`;
+        stopBtn.style.backgroundImage = `url(${sIdle})`;
+      } else {
+        playBtn.style.backgroundImage = `url(${pIdle})`;
+        stopBtn.style.backgroundImage = `url(${sPush})`;
+      }
+    }
+
+    // File load: reset to stopped state
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (f) {
+        audio.src = URL.createObjectURL(f);
+        audioLoaded = true;
+        loadSound.volume = audio.volume;
+        loadSound.currentTime = 0;
+        loadSound.play();
+        trackName = f.name.replace(/\.[^/.]+$/, '');
+        isPlaying = false;
+        isPausedState = false;
+        audio.pause();
+        audio.currentTime = 0;
+        document.getElementById('status').innerText = 'Status: Stopped';
+        updateStates();
+        draw();
+      }
+    });
+
+    // Controls
+    document.getElementById('fileBtn').onclick = () => document.getElementById('fileInput').click();
+    document.getElementById('playBtn').onclick = () => togglePlay();
+    document.getElementById('stopBtn').onclick = () => stopAudio();
+    document.getElementById('prevBtn').onclick = () => { if (audio.duration) audio.currentTime = Math.max(0,audio.currentTime-10); };
+    document.getElementById('nextBtn').onclick = () => { if (audio.duration) audio.currentTime = Math.min(audio.duration,audio.currentTime+10); };
+
+    document.getElementById('volumeControl').oninput = e => {
+      audio.volume = e.target.value;
+      buttonSound.volume = audio.volume;
+      loadSound.volume   = audio.volume;
+      stopSound.volume   = audio.volume;
+    };
+    document.getElementById('progressSlider').oninput = e => { if (audio.duration) audio.currentTime = (e.target.value/100)*audio.duration; draw(); };
+    audio.ontimeupdate = () => { if (audio.duration) document.getElementById('progressSlider').value = (audio.currentTime/audio.duration)*100; };
+
+    audio.onended = () => {
+      isPlaying = false;
+      isPausedState = false;
+      updateStates();
+      cancelAnimationFrame(animId);
+      document.getElementById('status').innerText = 'Status: Stopped';
+      stopSound.volume = audio.volume;
+      stopSound.currentTime = 0;
+      stopSound.play();
+      draw();
+    };
+
+    function togglePlay() {
+      if (!audioLoaded) {
+        document.getElementById('status').innerText = 'Status: No audio loaded';
+        return;
+      }
+      if (isPlaying) {
+        audio.pause();
+        isPlaying = false;
+        isPausedState = true;
+        document.getElementById('status').innerText = 'Status: Paused';
+      } else {
+        audio.play();
+        isPlaying = true;
+        isPausedState = false;
+        document.getElementById('status').innerText = 'Status: Playing';
+        draw();
+      }
+      updateStates();
+    }
+    function stopAudio() {
+      if (audioLoaded) {
+        audio.pause();
+        audio.currentTime = 0;
+        isPlaying = false;
+        isPausedState = false;
+        document.getElementById('status').innerText = 'Status: Stopped';
+        updateStates();
+        cancelAnimationFrame(animId);
+        stopSound.volume = audio.volume;
+        stopSound.currentTime = 0;
+        stopSound.play();
+        document.getElementById('progressSlider').value = 0;
+        draw();
+      }
+    }
+
+    // Draw function
+    function draw() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const t = Date.now()*wobbleS;
+      const wL = Math.sin(t+lPhase)*wobbleI;
+      const wR = Math.sin(t+rPhase)*wobbleI;
+      const ratio = audio.duration ? audio.currentTime/audio.duration : 0;
+      const lSize = maxReel - (maxReel-minReel)*ratio;
+      const rSize = minReel + (maxReel-minReel)*ratio;
+      if (showTapeReels) {
+        drawReel(canvas.width*leftX + wL, canvas.height*reelsY, -angle, lSize);
+        drawReel(canvas.width*rightX+ wR, canvas.height*reelsY, -angle, Math.max(rSize, ringSize));
+      }
+      if (overlayLoaded) ctx.drawImage(overlay,0,0,canvas.width,canvas.height);
+      if (showTrackLabel) {
+        ctx.font='20px Arial'; ctx.fillStyle='black'; ctx.textAlign='center';
+        ctx.fillText(trackName, canvas.width*textX, canvas.height*textY);
+      }
+      if (isPlaying) { angle+=ROT_INC; animId=requestAnimationFrame(draw); }
+    }
+
+    // Reel drawing helpers
+    function drawReel(x,y,a,s) { ctx.save(); ctx.translate(x,y); ctx.rotate(a);
+      ctx.fillStyle='#f4a261'; ctx.beginPath(); ctx.arc(0,0,ringSize,0,2*Math.PI); ctx.fill();
+      ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(0,0,s,0,2*Math.PI); ctx.fill();
+      drawReelRing(0,0); ctx.restore(); }
+    function drawReelRing(x,y) { ctx.save(); ctx.translate(x,y);
+      ctx.strokeStyle='white'; ctx.lineWidth=4.5; ctx.beginPath(); ctx.arc(0,0,ringSize,0,2*Math.PI); ctx.stroke();
+      for(let i=0;i<6;i++){ const t=2*Math.PI/6*i; const oX=Math.cos(t)*ringSize, oY=Math.sin(t)*ringSize;
+        const iX=Math.cos(t)*12*baseReelSize, iY=Math.sin(t)*12*baseReelSize;
+        ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(oX,oY); ctx.lineTo(iX,iY); ctx.stroke(); }
+      ctx.restore(); }
+  </script>
+</body>
+</html>

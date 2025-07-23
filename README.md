@@ -1,4 +1,4 @@
-Simple Local MP3 Player via Browser using P5js. Made with the help of Chat GPT. 
+Simple online MP3 Player via Browser, that play Local files,  using P5js. Made with the help of Chat GPT. 
 
 Version 57
  - Known Bugs - The Rotation of the Tape Reel gets crazy if tou press REW or FF repeatdly.

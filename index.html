@@ -3,67 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web Cassette MP3 Player</title>
+  <title>FreeTape Player</title>
   <style>
     :root {
-      --button-row-offset: 1px; /* vertical offset between tape and buttons */
+      --button-row-offset: 1px;
       --label-y-offset: 5px;
-      --textY: 0.32;        /* music name vertical position */
+      --textY: 0.32;
     }
     body {
-      background-color: #f4a261;
       margin: 0;
       font-family: Arial, sans-serif;
+      background-color: #f4a261;
     }
     .player-frame {
-      width: 650px;
-      margin: 20px auto;
-      padding: 10px;
+      width: 615px; /* 123 x 5 */
+      margin: 20px auto 0 auto;
+      padding: 0;
       background-color: transparent;
       position: relative;
     }
     .button-row {
+      width: 615px;
       display: flex;
-      justify-content: space-between;
-      margin-top: var(--button-row-offset);
+      flex-direction: row;
+      justify-content: flex-start;
+      align-items: flex-start;
+      gap: 0;
+      padding: 0;
+      margin: 0;
+      box-sizing: border-box;
+      border: none;
+      background: none;
     }
     .control-button {
-      width: 20%; /* five buttons each 20% of 650px = 130px */
-      height: 94px;
-      background-size: cover;
+      width: 123px;
+      height: 91px;
+      background-size: 123px 91px;
       background-repeat: no-repeat;
       background-position: center;
       background-color: transparent;
-      border: none;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
       cursor: pointer;
-      position: relative;
-      padding: 0;
+      padding: 0 !important;
+      margin: 0 !important;
+      box-sizing: border-box;
+      appearance: none;
     }
     .button-label {
       position: absolute;
       bottom: var(--label-y-offset);
+      left: 5px;
       color: white;
       background: rgba(0,0,0,0.5);
       padding: 2px 4px;
       font-size: 12px;
+      display: none;
     }
-    .fileBtn .button-label { left: 5px; }
-    .playBtn .button-label { left: 5px; }
-    .stopBtn .button-label { left: 5px; }
-    .prevBtn .button-label { left: 5px; }
-    .nextBtn .button-label { left: 5px; }
-    #progressContainer {
-      width: 650px;
-      margin: 10px auto;
+    #volumeContainer, #progressContainer {
+      width: 615px;
+      margin: 10px auto 0 auto;
+      text-align: center;
+      padding: 0;
     }
-    input[type=range] {
+    #volumeControl, #progressSlider {
       width: 100%;
+      margin: 0;
+      display: block;
+      box-sizing: border-box;
+    }
+    #status {
+      text-align: center;
+    }
+    #cassetteCanvas {
+      display: block;
+      margin: 0 auto;
+      /* Alinhado ao centro do container */
     }
   </style>
 </head>
 <body>
   <div class="player-frame">
-    <canvas id="cassetteCanvas" width="650" height="414"></canvas>
+    <canvas id="cassetteCanvas" width="615" height="414"></canvas>
     <div class="button-row">
       <button id="fileBtn"  class="control-button fileBtn"><span class="button-label">File</span></button>
       <button id="playBtn"  class="control-button playBtn"><span class="button-label">Play</span></button>
@@ -72,15 +95,32 @@
       <button id="nextBtn"  class="control-button nextBtn"><span class="button-label">Next</span></button>
     </div>
   </div>
+
+  <div id="volumeContainer">
+    <label>Vol:
+      <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1">
+    </label>
+  </div>
   <div id="progressContainer">
     <input type="file" id="fileInput" accept="audio/mp3" style="display:none">
-    <label>Vol:<br><input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1"></label>
-    <br><br>
-    <!-- Progress label removed, only slider shown -->
     <input type="range" id="progressSlider" min="0" max="100" value="0">
     <p id="status">Status: Stopped</p>
   </div>
+
   <script>
+    // ======== BG CONFIG ========
+    let useLiveBg = false;
+    const normalBgColor = '#f4a261';
+    const liveBgColor   = '#ff00ff';
+    function setBgColor() {
+      document.body.style.backgroundColor = useLiveBg ? liveBgColor : normalBgColor;
+    }
+    setBgColor();
+    // ==========================
+
+    // Toggle UI
+    let hideUI = false;
+
     // Flags
     const showBackground = false;
     const showTrackLabel = true;
@@ -93,6 +133,61 @@
       document.querySelectorAll('.button-label').forEach(lbl => lbl.style.display = showButtonsLabels ? 'block' : 'none');
       document.getElementById('status').style.display = showStatus ? 'block' : 'none';
     });
+
+    // ==== KEYBOARD SHORTCUTS ====
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      const key = e.key.toLowerCase();
+
+      // U = Toggle UI (hide all controls except tape)
+      if (key === 'u') {
+        hideUI = !hideUI;
+        document.querySelector('.button-row').style.display = hideUI ? 'none' : 'flex';
+        document.getElementById('volumeContainer').style.display = hideUI ? 'none' : '';
+        document.getElementById('progressContainer').style.display = hideUI ? 'none' : '';
+        return;
+      }
+      // B = alterna BG magenta/normal
+      if (key === 'b') {
+        useLiveBg = !useLiveBg;
+        setBgColor();
+        return;
+      }
+      // = (igual) = volume up
+      if (e.key === '=') {
+        adjustVolume(0.05);
+        return;
+      }
+      // - (menos) = volume down
+      if (e.key === '-') {
+        adjustVolume(-0.05);
+        return;
+      }
+      // R ou seta esquerda = rewind
+      if (key === 'r' || e.key === 'arrowleft') {
+        document.getElementById('prevBtn').click();
+        return;
+      }
+      // F ou seta direita = forward
+      if (key === 'f' || e.key === 'arrowright') {
+        document.getElementById('nextBtn').click();
+        return;
+      }
+      switch(key) {
+        case 'l': document.getElementById('fileBtn').click(); break;
+        case 'p': document.getElementById('playBtn').click(); break;
+        case 's': document.getElementById('stopBtn').click(); break;
+      }
+    });
+    function adjustVolume(delta) {
+      const vol = Math.max(0, Math.min(1, audio.volume + delta));
+      audio.volume = vol;
+      buttonSound.volume = vol;
+      loadSound.volume   = vol;
+      stopSound.volume   = vol;
+      document.getElementById('volumeControl').value = vol;
+    }
+    // ============================
 
     // Sounds
     const buttonSound = new Audio('bt_press.wav');
@@ -152,22 +247,23 @@
     });
 
     // Update visual states
-    function updateStates() {
-      const playBtn = document.getElementById('playBtn');
-      const stopBtn = document.getElementById('stopBtn');
-      const [pIdle,pPush,pPause] = btnMap.playBtn;
-      const [sIdle,sPush]        = btnMap.stopBtn;
-      if (isPlaying) {
-        playBtn.style.backgroundImage = `url(${pPush})`;
-        stopBtn.style.backgroundImage = `url(${sIdle})`;
-      } else if (isPausedState) {
-        playBtn.style.backgroundImage = `url(${pPause})`;
-        stopBtn.style.backgroundImage = `url(${sIdle})`;
-      } else {
-        playBtn.style.backgroundImage = `url(${pIdle})`;
-        stopBtn.style.backgroundImage = `url(${sPush})`;
-      }
-    }
+    // Mantenha o updateStates assim:
+function updateStates() {
+  const playBtn = document.getElementById('playBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const [pIdle,pPush,pPause] = btnMap.playBtn;
+  const [sIdle,sPush]        = btnMap.stopBtn;
+  if (isPlaying) {
+    playBtn.style.backgroundImage = `url(${pPush})`;
+    stopBtn.style.backgroundImage = `url(${sIdle})`;
+  } else if (isPausedState) {
+    playBtn.style.backgroundImage = `url(${pPause})`;
+    stopBtn.style.backgroundImage = `url(${sPush})`;
+  } else {
+    playBtn.style.backgroundImage = `url(${pIdle})`;
+    stopBtn.style.backgroundImage = `url(${sPush})`;
+  }
+}
 
     // File load: reset to stopped state
     document.getElementById('fileInput').addEventListener('change', e => {
@@ -237,21 +333,21 @@
       updateStates();
     }
     function stopAudio() {
-      if (audioLoaded) {
-        audio.pause();
-        audio.currentTime = 0;
-        isPlaying = false;
-        isPausedState = false;
-        document.getElementById('status').innerText = 'Status: Stopped';
-        updateStates();
-        cancelAnimationFrame(animId);
-        stopSound.volume = audio.volume;
-        stopSound.currentTime = 0;
-        stopSound.play();
-        document.getElementById('progressSlider').value = 0;
-        draw();
-      }
-    }
+  if (audioLoaded) {
+    audio.pause();
+    // NÃO VOLTA PRO INÍCIO!
+    isPlaying = false;
+    isPausedState = true;
+    document.getElementById('status').innerText = 'Status: Stopped';
+    updateStates();
+    cancelAnimationFrame(animId);
+    stopSound.volume = audio.volume;
+    stopSound.currentTime = 0;
+    stopSound.play();
+    // NÃO zera barra de progresso
+    draw();
+  }
+}
 
     // Draw function
     function draw() {

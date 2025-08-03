@@ -8,7 +8,7 @@
     :root {
       --button-row-offset: 1px;
       --label-y-offset: 5px;
-      --textY: 0.32;
+      --textY: 0.3;  // Music Name Y Position
     }
     body {
       margin: 0;
@@ -127,6 +127,17 @@
     const showTapeReels = true;
     const showButtonsLabels = false;
     const showStatus = false; // hide status by default
+// Barra preta animada simulando a fita sobre o cabeçote
+const tapeBar = {
+  width: 310,        // largura em px
+  thickness: 06,     // altura (grossura) da fita
+  baseX: 0.5,        // centro X (0..1, fração da largura do canvas)
+  baseY: 0.91,      // base Y (fração do height do canvas) -- ajuste como quiser!
+  animAmplitude: 0.5,  // amplitude do movimento senoide (em px)
+  playOffset: -3,    // offset em Y quando PLAY/Pause
+  stopOffset: 0      // offset em Y quando Stop
+};
+let tapeBarAnimPhase = 0; // pode ser global, vai sincronizar com a rotação
 
     document.addEventListener('DOMContentLoaded', () => {
       if (!showBackground) document.querySelector('.player-frame').style.backgroundColor = 'transparent';
@@ -193,6 +204,9 @@
     const buttonSound = new Audio('bt_press.wav');
     const loadSound   = new Audio('tape_load.wav');
     const stopSound   = new Audio('tape_stop.wav');
+    const playSound = new Audio('play_sound.wav');
+    const rwdSound = new Audio('rwd_sound.wav');
+    const fwdSound = new Audio('fwd_sound.wav');
 
     // Audio player
     const audio = new Audio();
@@ -216,7 +230,7 @@
     let angle = 0, animId;
 
     // Overlay
-    const overlay = new Image(); overlay.src = './K7_Face_03.png';
+    const overlay = new Image(); overlay.src = './K7_Face_04B.png';
     let overlayLoaded = false;
     overlay.onload = () => { overlayLoaded = true; draw(); };
 
@@ -233,14 +247,16 @@
     Object.entries(btnMap).forEach(([id, states]) => {
       const btn = document.getElementById(id);
       btn.style.backgroundImage = `url(${states[0]})`;
-      btn.addEventListener('mousedown', () => {
-        buttonSound.volume = audio.volume;
-        loadSound.volume   = audio.volume;
-        stopSound.volume   = audio.volume;
-        btn.style.backgroundImage = `url(${states[1]})`;
-        buttonSound.currentTime = 0;
-        buttonSound.play();
-      });
+btn.addEventListener('mousedown', () => {
+  // Só toca buttonSound para os botões normais
+  if (id === 'playBtn') return;
+  buttonSound.volume = audio.volume;
+  loadSound.volume   = audio.volume;
+  stopSound.volume   = audio.volume;
+  btn.style.backgroundImage = `url(${states[1]})`;
+  buttonSound.currentTime = 0;
+  buttonSound.play();
+});
       btn.addEventListener('mouseup', () => {
         btn.style.backgroundImage = `url(${states[0]})`;
       });
@@ -289,7 +305,15 @@ function updateStates() {
     document.getElementById('fileBtn').onclick = () => document.getElementById('fileInput').click();
     document.getElementById('playBtn').onclick = () => togglePlay();
     document.getElementById('stopBtn').onclick = () => stopAudio();
-    document.getElementById('prevBtn').onclick = () => { if (audio.duration) audio.currentTime = Math.max(0,audio.currentTime-10); };
+    document.getElementById('prevBtn').onclick = () => {
+  if (audio.duration) {
+    audio.currentTime = Math.max(0, audio.currentTime - 10);
+    // Checa se está no início
+    if (audio.currentTime === 0) {
+      stopFromRewind();
+    }
+  }
+};
     document.getElementById('nextBtn').onclick = () => { if (audio.duration) audio.currentTime = Math.min(audio.duration,audio.currentTime+10); };
 
     document.getElementById('volumeControl').oninput = e => {
@@ -313,25 +337,69 @@ function updateStates() {
       draw();
     };
 
+    function stopFromRewind() {
+  // Traz o player para o estado pós-load
+  isPlaying = false;
+  isPausedState = false;
+  document.getElementById('status').innerText = 'Status: Stopped';
+  updateStates();
+  cancelAnimationFrame(animId);
+  stopSound.volume = audio.volume;
+  stopSound.currentTime = 0;
+  stopSound.play();
+  draw();
+}
     function togglePlay() {
-      if (!audioLoaded) {
-        document.getElementById('status').innerText = 'Status: No audio loaded';
-        return;
-      }
-      if (isPlaying) {
-        audio.pause();
-        isPlaying = false;
-        isPausedState = true;
-        document.getElementById('status').innerText = 'Status: Paused';
-      } else {
+  if (!audioLoaded) {
+    document.getElementById('status').innerText = 'Status: No audio loaded';
+    return;
+  }
+  if (isPlaying) {
+    audio.pause();
+    isPlaying = false;
+    isPausedState = true;
+    document.getElementById('status').innerText = 'Status: Paused';
+    updateStates();
+  } else {
+    // Fita começa a girar imediatamente!
+    isPlaying = true;
+    isPausedState = false;
+    document.getElementById('status').innerText = 'Status: Playing';
+    draw();
+    updateStates();
+
+    // Decide se vai delay ou não:
+    if (audio.currentTime < 0.05) {
+      // Início da faixa: simula delay da fita real
+      playSound.volume = audio.volume;
+      playSound.currentTime = 0;
+      playSound.play();
+
+      let fadeDuration = 3000; // ms
+      let fadeSteps = 24;
+      let step = 0;
+      let origVolume = playSound.volume;
+      let fadeInterval = setInterval(() => {
+        step++;
+        playSound.volume = origVolume * (1 - step / fadeSteps);
+        if (step >= fadeSteps) {
+          playSound.volume = 0;
+          clearInterval(fadeInterval);
+        }
+      }, fadeDuration / fadeSteps);
+
+      setTimeout(() => {
         audio.play();
-        isPlaying = true;
-        isPausedState = false;
-        document.getElementById('status').innerText = 'Status: Playing';
-        draw();
-      }
-      updateStates();
+      }, 1000);
+    } else {
+      // Se está no meio, toca na hora (e playSound também)
+      playSound.volume = audio.volume;
+      playSound.currentTime = 0;
+      playSound.play();
+      audio.play();
     }
+  }
+}
     function stopAudio() {
   if (audioLoaded) {
     audio.pause();
@@ -341,6 +409,12 @@ function updateStates() {
     document.getElementById('status').innerText = 'Status: Stopped';
     updateStates();
     cancelAnimationFrame(animId);
+
+    // CORTE imediato do som de play:
+    playSound.pause(); 
+    playSound.currentTime = 0;
+    playSound.volume = 0;
+
     stopSound.volume = audio.volume;
     stopSound.currentTime = 0;
     stopSound.play();
@@ -351,24 +425,52 @@ function updateStates() {
 
     // Draw function
     function draw() {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      const t = Date.now()*wobbleS;
-      const wL = Math.sin(t+lPhase)*wobbleI;
-      const wR = Math.sin(t+rPhase)*wobbleI;
-      const ratio = audio.duration ? audio.currentTime/audio.duration : 0;
-      const lSize = maxReel - (maxReel-minReel)*ratio;
-      const rSize = minReel + (maxReel-minReel)*ratio;
-      if (showTapeReels) {
-        drawReel(canvas.width*leftX + wL, canvas.height*reelsY, -angle, lSize);
-        drawReel(canvas.width*rightX+ wR, canvas.height*reelsY, -angle, Math.max(rSize, ringSize));
-      }
-      if (overlayLoaded) ctx.drawImage(overlay,0,0,canvas.width,canvas.height);
-      if (showTrackLabel) {
-        ctx.font='20px Arial'; ctx.fillStyle='black'; ctx.textAlign='center';
-        ctx.fillText(trackName, canvas.width*textX, canvas.height*textY);
-      }
-      if (isPlaying) { angle+=ROT_INC; animId=requestAnimationFrame(draw); }
-    }
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const t = Date.now()*wobbleS;
+  const wL = Math.sin(t+lPhase)*wobbleI;
+  const wR = Math.sin(t+rPhase)*wobbleI;
+  const ratio = audio.duration ? audio.currentTime/audio.duration : 0;
+  const lSize = maxReel - (maxReel-minReel)*ratio;
+  const rSize = minReel + (maxReel-minReel)*ratio;
+  if (showTapeReels) {
+    drawReel(canvas.width*leftX + wL, canvas.height*reelsY, -angle, lSize);
+    drawReel(canvas.width*rightX+ wR, canvas.height*reelsY, -angle, Math.max(rSize, ringSize));
+  }
+
+  // -------- Barra preta animada da fita (cabeçote) --------
+  let barY = canvas.height * tapeBar.baseY;
+  let reelIsMoving = isPlaying;
+  let yAnim = 0;
+  if (reelIsMoving) {
+    tapeBarAnimPhase += 0.1;
+    yAnim = Math.sin(tapeBarAnimPhase) * tapeBar.animAmplitude;
+    barY += tapeBar.playOffset;
+  } else {
+    tapeBarAnimPhase = 0;
+    yAnim = 0;
+    barY += tapeBar.stopOffset;
+  }
+  ctx.save();
+  ctx.fillStyle = 'black';
+  ctx.globalAlpha = 0.87;
+  ctx.fillRect(
+    canvas.width * tapeBar.baseX - tapeBar.width/2,
+    barY + yAnim,
+    tapeBar.width,
+    tapeBar.thickness
+  );
+  ctx.restore();
+
+  // ----- overlay, track label etc...
+  if (overlayLoaded) ctx.drawImage(overlay,0,0,canvas.width,canvas.height);
+  if (showTrackLabel) {
+    ctx.font='20px Arial'; ctx.fillStyle='black'; ctx.textAlign='center';
+    ctx.fillText(trackName, canvas.width*textX, canvas.height*textY);
+  }
+  if (isPlaying) { angle+=ROT_INC; animId=requestAnimationFrame(draw); }
+}
+
+
 
     // Reel drawing helpers
     function drawReel(x,y,a,s) { ctx.save(); ctx.translate(x,y); ctx.rotate(a);

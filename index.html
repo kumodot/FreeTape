@@ -8,7 +8,7 @@
     :root {
       --button-row-offset: 1px;
       --label-y-offset: 5px;
-      --textY: 0.3;  // Music Name Y Position
+      --textY: 0.29;  // Music Name Y Position
     }
     body {
       margin: 0;
@@ -122,6 +122,7 @@
     let hideUI = false;
 
     // Flags
+    const maxTrackLineLength = 40; // Pode ajustar como quiser!
     const showBackground = false;
     const showTrackLabel = true;
     const showTapeReels = true;
@@ -336,7 +337,13 @@ function updateStates() {
       stopSound.play();
       draw();
     };
-
+    function splitTrackName(name, maxLen) {
+  if (name.length <= maxLen) return [name];
+  // Procura espaço antes do limite
+  let idx = name.lastIndexOf(' ', maxLen);
+  if (idx === -1) idx = maxLen; // Se não achar, quebra no limite mesmo
+  return [name.slice(0, idx), name.slice(idx + 1)];
+}
     function stopFromRewind() {
   // Traz o player para o estado pós-load
   isPlaying = false;
@@ -464,9 +471,17 @@ function updateStates() {
   // ----- overlay, track label etc...
   if (overlayLoaded) ctx.drawImage(overlay,0,0,canvas.width,canvas.height);
   if (showTrackLabel) {
-    ctx.font='20px Arial'; ctx.fillStyle='black'; ctx.textAlign='center';
-    ctx.fillText(trackName, canvas.width*textX, canvas.height*textY);
-  }
+  ctx.font = '20px Arial';
+  ctx.fillStyle = 'black';
+  ctx.textAlign = 'center';
+  const lines = splitTrackName(trackName, maxTrackLineLength);
+  // Ajusta Y: se tiver duas linhas, sobe metade da altura da linha (por exemplo 12px)
+  let y = canvas.height * textY;
+  if (lines.length > 1) y -= 12; // Ou ajuste para mais/menos
+  ctx.fillText(lines[0], canvas.width*textX, y);
+  if (lines[1]) ctx.fillText(lines[1], canvas.width*textX, y + 24);
+}
+
   if (isPlaying) { angle+=ROT_INC; animId=requestAnimationFrame(draw); }
 }
 

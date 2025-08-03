@@ -1,5 +1,8 @@
 Simple online MP3 Player via Browser, that play Local files,  using P5js. Made with the help of Chat GPT. 
 
+Version 58B - August 03
+- Long music names (longer than 40 cHars) appear in 2 lines now ! 
+
 Version 58 - August 03
 - New Tape Faceplate with a Touch of realism, paper texture, bolts, etc. 
 - New Tape Animation. Now there's a tape at the botton that also moves along with the reels, and reacts to Play/Stop actions

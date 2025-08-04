@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- FreeTape Player - Versão 058C - GOLD -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -120,6 +121,7 @@
 
     // Toggle UI
     let hideUI = false;
+    let hideBars = false; // Flag para esconder/mostrar volume e progress
 
     // Flags
     const maxTrackLineLength = 40; // Pode ajustar como quiser!
@@ -144,8 +146,11 @@ let tapeBarAnimPhase = 0; // pode ser global, vai sincronizar com a rotação
       if (!showBackground) document.querySelector('.player-frame').style.backgroundColor = 'transparent';
       document.querySelectorAll('.button-label').forEach(lbl => lbl.style.display = showButtonsLabels ? 'block' : 'none');
       document.getElementById('status').style.display = showStatus ? 'block' : 'none';
-    });
-
+      // Adicione isto para iniciar já escondido:
+      hideBars = true;
+      document.getElementById('volumeContainer').style.display = 'none';
+      document.getElementById('progressContainer').style.display = 'none';
+      });
     // ==== KEYBOARD SHORTCUTS ====
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT') return;
@@ -190,6 +195,14 @@ let tapeBarAnimPhase = 0; // pode ser global, vai sincronizar com a rotação
         case 'p': document.getElementById('playBtn').click(); break;
         case 's': document.getElementById('stopBtn').click(); break;
       }
+      // X = Toggle só as barras (volume e progresso)
+      if (key === 'x') {
+        hideBars = !hideBars;
+        document.getElementById('volumeContainer').style.display = hideBars ? 'none' : '';
+        document.getElementById('progressContainer').style.display = hideBars ? 'none' : '';
+        return;
+     }
+
     });
     function adjustVolume(delta) {
       const vol = Math.max(0, Math.min(1, audio.volume + delta));
